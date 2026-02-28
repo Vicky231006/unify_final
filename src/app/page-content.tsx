@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CanvasEffect } from "@/components/landing/CanvasEffect";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
+import { Navbar } from "@/components/landing/Navbar";
 import { Onboarding } from "@/components/onboarding/Onboarding";
 
 export function PageContent() {
@@ -12,6 +13,9 @@ export function PageContent() {
     return (
         <main className="relative min-h-screen w-full bg-[var(--color-background)] text-white overflow-hidden">
             <CanvasEffect />
+
+            {/* Navbar is always visible on the landing view */}
+            {!showOnboarding && <Navbar onSignUp={() => setShowOnboarding(true)} />}
 
             <AnimatePresence mode="wait">
                 {!showOnboarding ? (
