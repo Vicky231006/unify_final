@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/dashboard/Sidebar";
+import { Assistant } from "@/components/dashboard/Assistant";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     return (
@@ -14,10 +15,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         <span className="text-sm text-gray-400">System Nominal</span>
                     </div>
                 </header>
-                <div className="flex-1 overflow-y-auto p-8">
+                <div className="flex-1 overflow-y-auto p-8 relative">
                     {children}
                 </div>
             </main>
+
+            {/* AI Assistant */}
+            <Assistant />
         </div>
     );
 }

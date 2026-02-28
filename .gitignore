@@ -39,3 +39,51 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python eggs / packaging
+*.egg
+*.egg-info/
+dist/
+eggs/
+.eggs/
+wheels/
+
+# pytest / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# mypy / ruff / type checkers
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# Editors & IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+
