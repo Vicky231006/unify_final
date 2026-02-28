@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 
-export function Header() {
+export function Header({ onStart }: { onStart?: () => void }) {
   return (
     <motion.header
       initial={{ y: -50, opacity: 0 }}
@@ -27,9 +27,9 @@ export function Header() {
         <Link href="/login" className="hidden sm:block text-base font-medium text-neutral-300 hover:text-white transition-colors">
           Sign In
         </Link>
-        <Link href="/login" className="px-6 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white text-base font-medium transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+        <button onClick={onStart} className="px-6 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white text-base font-medium transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]">
           Get Started
-        </Link>
+        </button>
       </div>
     </motion.header>
   );

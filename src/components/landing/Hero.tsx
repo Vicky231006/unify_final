@@ -22,7 +22,7 @@ export function Hero({ onExplore }: { onExplore: () => void }) {
                 The unified enterprise platform that breaks down silos and transforms your raw data into predictive power.
             </motion.p>
 
-            <Link href="/login">
+            <button onClick={onExplore}>
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -38,7 +38,7 @@ export function Hero({ onExplore }: { onExplore: () => void }) {
                     </span>
                     <div className="absolute inset-0 rounded-full ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-background)] opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]" />
                 </motion.div>
-            </Link>
+            </button>
         </section>
     );
 }
