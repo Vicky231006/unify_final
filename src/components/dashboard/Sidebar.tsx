@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Users, LineChart, Settings, ArrowLeft } from "lucide-react";
-import { useWorkspace } from "../providers/WorkspaceProvider";
+import { useAppStore } from "@/store";
 
 const navItems = [
     { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
@@ -14,7 +14,14 @@ const navItems = [
 
 export function Sidebar() {
     const pathname = usePathname();
-    const { workspaceName, managerId } = useWorkspace();
+    const { workspaces, activeWorkspaceId } = useAppStore();
+
+    // Fallback if no specific workspace selected
+    const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
+    const workspaceName = activeWorkspace?.name || "Global Workspace";
+    const userRole = activeWorkspace?.role || "Manager";
+    const managerInitials = "AC";
+    const managerName = "Alex Chen";
 
     return (
         <aside className="w-64 border-r border-[var(--color-border)] bg-[var(--color-card)] flex flex-col">
@@ -48,11 +55,11 @@ export function Sidebar() {
             <div className="p-4 border-t border-[var(--color-border)]">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[var(--color-primary)] to-purple-500 flex items-center justify-center font-bold text-white shadow-lg shrink-0">
-                        {managerId ? managerId.substring(0, 2).toUpperCase() : 'AC'}
+                        {managerInitials}
                     </div>
                     <div className="overflow-hidden">
-                        <p className="text-sm font-medium truncate">{managerId || 'Alex Chen'}</p>
-                        <p className="text-xs text-[var(--color-primary)] truncate">{workspaceName || 'Global Workspace'}</p>
+                        <p className="text-sm font-medium truncate">{managerName} <span className="text-[10px] text-gray-400">({userRole})</span></p>
+                        <p className="text-xs text-[var(--color-primary)] truncate">{workspaceName}</p>
                     </div>
                 </div>
             </div>
