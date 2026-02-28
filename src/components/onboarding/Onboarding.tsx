@@ -41,6 +41,7 @@ export function Onboarding() {
     const [orgSize, setOrgSize] = useState("");
     const [managerId, setManagerId] = useState("");
     const [isDeptManager, setIsDeptManager] = useState(false);
+    const [onboardingRole, setOnboardingRole] = useState<'CEO' | 'Manager' | 'Employee'>('Manager');
     const [errors1, setErrors1] = useState<Record<string, string>>({});
 
     // Step 2
@@ -58,7 +59,7 @@ export function Onboarding() {
     // Step 4
     const [csvFile, setCsvFile] = useState<File | null>(null);
 
-    const { setWorkspaceData } = useWorkspace();
+    const { setWorkspaceData, setUserRole } = useWorkspace();
     const router = useRouter();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +141,8 @@ export function Onboarding() {
     };
 
     const parseCSVAndSubmit = () => {
+        // Persist role from onboarding selection
+        setUserRole(onboardingRole);
         if (!csvFile) {
             setWorkspaceData(wsName, managerId, []);
             return;
@@ -208,23 +211,35 @@ export function Onboarding() {
                             {errors1.orgSize && <FieldError msg={errors1.orgSize} />}
                         </div>
 
+                        {/* Role Selection */}
+                        <div>
+                            <label className="text-sm text-gray-400 mb-1 block">Your Role <span className="text-red-400">*</span></label>
+                            <select
+                                value={onboardingRole}
+                                onChange={(e) => setOnboardingRole(e.target.value as 'CEO' | 'Manager' | 'Employee')}
+                                className={inputCls() + " cursor-pointer"}
+                                style={{ backgroundColor: "var(--color-background)" }}
+                            >
+                                <option value="CEO">CEO — Executive oversight</option>
+                                <option value="Manager">Manager — Team execution control</option>
+                                <option value="Employee">Employee — Personal task management</option>
+                            </select>
+                        </div>
+
                         {/* Manager ID + Dept Manager toggle */}
                         <div>
-                            <label className="text-sm text-gray-400 mb-1 block">Your Manager ID <span className="text-red-400">*</span></label>
+                            <label className="text-sm text-gray-400 mb-1 block">Your ID <span className="text-red-400">*</span></label>
                             <div className="flex items-center gap-2">
                                 <input value={managerId} onChange={(e) => setManagerId(e.target.value)} type="text" className={inputCls(!!errors1.managerId)} placeholder="e.g. ADM-001" />
-                                <label className="flex items-center gap-2 shrink-0 cursor-pointer select-none px-3 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors text-xs text-gray-300 whitespace-nowrap"
-                                    title="Also assign as Department Manager">
-                                    <input type="checkbox" checked={isDeptManager} onChange={(e) => setIsDeptManager(e.target.checked)} className="accent-[var(--color-primary)] w-3.5 h-3.5" />
-                                    Dept. Manager
-                                </label>
+                                {onboardingRole !== 'Employee' && (
+                                    <label className="flex items-center gap-2 shrink-0 cursor-pointer select-none px-3 py-3 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-primary)] transition-colors text-xs text-gray-300 whitespace-nowrap"
+                                        title="Also assign as Department Manager">
+                                        <input type="checkbox" checked={isDeptManager} onChange={(e) => setIsDeptManager(e.target.checked)} className="accent-[var(--color-primary)] w-3.5 h-3.5" />
+                                        Dept. Mgr
+                                    </label>
+                                )}
                             </div>
                             {errors1.managerId && <FieldError msg={errors1.managerId} />}
-                            {isDeptManager && (
-                                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-[var(--color-primary)] mt-1">
-                                    ✓ This manager will also be set as Department Manager.
-                                </motion.p>
-                            )}
                         </div>
 
                         <button onClick={handleNext} className="mt-2 w-full bg-[var(--color-primary)] text-white p-3 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-opacity-90 transition-opacity cursor-pointer">
@@ -395,7 +410,14 @@ export function Onboarding() {
                 );
 
             case 5:
-                return <LoadingState onComplete={() => router.push("/dashboard")} />;
+                return <LoadingState onComplete={() => {
+                    // Employee lands directly on dashboard; CEO/Manager see workspace selector
+                    if (onboardingRole === 'Employee') {
+                        router.push('/dashboard');
+                    } else {
+                        router.push('/workspaces');
+                    }
+                }} />;
         }
     };
 

@@ -68,6 +68,22 @@ export type ActivityLog = {
     timestamp: string;
 };
 
+export type Transaction = {
+    Date: string;
+    Amount: number;
+    Type: 'Revenue' | 'Expense';
+    Category: string;
+};
+
+// Shape returned by the LLM normalization endpoint
+export type NormalizedWorkspaceData = {
+    employees: Array<{ name: string; role: string; email?: string; capacity?: number }>;
+    departments: Array<{ name: string }>;
+    projects: Array<{ name: string; description?: string; status?: string; startDate?: string; endDate?: string }>;
+    tasks: Array<{ title: string; type?: string; assigneeName?: string; projectName?: string; status?: string; weight?: number; startDate?: string; endDate?: string }>;
+    transactions: Array<{ Date: string; Amount: number; Type: string; Category: string }>;
+};
+
 export interface AppState {
     activeWorkspaceId: string | null;
     workspaces: Workspace[];
@@ -105,6 +121,7 @@ export interface AppState {
     deleteTask: (id: string) => void;
 
     logAction: (workspaceId: string, action: string) => void;
+    bulkIngestWorkspaceData: (workspaceId: string, data: NormalizedWorkspaceData) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -220,6 +237,73 @@ export const useAppStore = create<AppState>()(
                 if (!workspaceId) return state;
                 return {
                     activityLogs: [{ id: uuidv4(), workspaceId, action, timestamp: new Date().toISOString() }, ...state.activityLogs].slice(0, 100)
+                };
+            }),
+
+            bulkIngestWorkspaceData: (workspaceId, data) => set((state) => {
+                // Remove existing data for this workspace
+                const keepEmployees = state.employees.filter(e => e.workspaceId !== workspaceId);
+                const keepDepartments = state.departments.filter(d => d.workspaceId !== workspaceId);
+                const keepProjects = state.projects.filter(p => p.workspaceId !== workspaceId);
+                const oldProjectIds = state.projects.filter(p => p.workspaceId === workspaceId).map(p => p.id);
+                const keepTasks = state.tasks.filter(t => !oldProjectIds.includes(t.projectId));
+
+                // Seed new departments
+                const newDepts = data.departments.map(d => ({
+                    id: uuidv4(), workspaceId, name: d.name, managerId: null
+                }));
+
+                // Seed new employees
+                const newEmps = data.employees.map(e => ({
+                    id: uuidv4(), workspaceId,
+                    name: e.name,
+                    role: e.role || 'Employee',
+                    departmentId: null, teamId: null,
+                    isActive: true,
+                    capacity: e.capacity ?? 100,
+                    joinedDate: new Date().toISOString(),
+                }));
+
+                // Seed new projects
+                const now = new Date();
+                const newProjects = data.projects.map(p => ({
+                    id: uuidv4(), workspaceId,
+                    name: p.name,
+                    description: p.description || '',
+                    status: (p.status as Project['status']) || 'Not Started',
+                    startDate: p.startDate || now.toISOString(),
+                    endDate: p.endDate || new Date(now.getTime() + 86400000 * 30).toISOString(),
+                }));
+
+                // Seed new tasks (resolve project & assignee by name)
+                const newTasks: Task[] = data.tasks.map(t => {
+                    const proj = newProjects.find(p => p.name === t.projectName) || newProjects[0];
+                    const emp = newEmps.find(e => e.name === t.assigneeName) || null;
+                    return {
+                        id: uuidv4(),
+                        projectId: proj?.id || '',
+                        title: t.title,
+                        type: t.type || 'Task',
+                        assigneeId: emp?.id || null,
+                        status: (t.status as Task['status']) || 'To Do',
+                        weight: t.weight ?? 5,
+                        startDate: t.startDate || now.toISOString(),
+                        endDate: t.endDate || new Date(now.getTime() + 86400000 * 7).toISOString(),
+                        completedDate: t.status === 'Done' ? new Date().toISOString() : null,
+                        qualityIndicator: 80,
+                        dependencies: [],
+                    };
+                });
+
+                return {
+                    departments: [...keepDepartments, ...newDepts],
+                    employees: [...keepEmployees, ...newEmps],
+                    projects: [...keepProjects, ...newProjects],
+                    tasks: [...keepTasks, ...newTasks],
+                    activityLogs: [
+                        { id: uuidv4(), workspaceId, action: `Ingested CSV data: ${data.employees.length} employees, ${data.projects.length} projects, ${data.tasks.length} tasks`, timestamp: new Date().toISOString() },
+                        ...state.activityLogs
+                    ].slice(0, 100)
                 };
             }),
         }),
