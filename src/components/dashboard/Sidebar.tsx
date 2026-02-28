@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { useAppStore } from "@/store";
 import {
     LayoutDashboard, Users, LineChart, Settings, ArrowLeft,
     BarChart3, ShieldCheck, GitBranch, Activity,
-    Calendar, Star, HelpCircle
+    Calendar, Star, HelpCircle, LogOut
 } from "lucide-react";
 
 type NavItem = { name: string; href: string; icon: React.ElementType };
@@ -62,26 +63,48 @@ function getRoleGroups(role: string): NavGroup[] {
 
 export function Sidebar() {
     const pathname = usePathname();
-    const { userRole } = useWorkspace();
+    const router = useRouter();
+    const { userRole, clearWorkspace } = useWorkspace();
+    const { session, signOut, userData } = useAuth();
     const { workspaces, activeWorkspaceId } = useAppStore();
 
     const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
     const workspaceName = activeWorkspace?.name || "Global Workspace";
 
-    const roleConfig = {
+    // Use Workspace userRole for navigation logic, but when possible, reflect DB values
+    const displayedRole = (userData?.role || userRole) as 'CEO' | 'Manager' | 'Employee' | string;
+
+    const roleConfigMap: Record<string, { name: string, initials: string, accent: string }> = {
         CEO: { name: "Alex Chen", initials: "AC", accent: "from-blue-500 to-indigo-500" },
         Manager: { name: "Sarah Miller", initials: "SM", accent: "from-purple-500 to-pink-500" },
         Employee: { name: "James Wilson", initials: "JW", accent: "from-emerald-500 to-teal-500" },
-    }[userRole] ?? { name: "User", initials: "U", accent: "from-gray-500 to-gray-700" };
+    };
 
-    const roleBadge = {
+    const roleConfig = roleConfigMap[displayedRole] ?? { name: "User", initials: "U", accent: "from-gray-500 to-gray-700" };
+
+    // For real Supabase users, show their actual name/email from the DB
+    const displayName = userData?.full_name
+        || session?.user?.email
+        || roleConfig.name;
+    const initials = session
+        ? (displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2))
+        : roleConfig.initials;
+
+    const roleBadgeMap: Record<string, string> = {
         CEO: "bg-blue-500/20 text-blue-400",
         Manager: "bg-purple-500/20 text-purple-400",
         Employee: "bg-emerald-500/20 text-emerald-400",
-    }[userRole] ?? "bg-gray-500/20 text-gray-400";
+    };
+    const roleBadge = roleBadgeMap[displayedRole] ?? "bg-gray-500/20 text-gray-400";
 
-    const groups = getRoleGroups(userRole);
-    const showWorkspaceSwitcher = userRole !== "Employee";
+    const groups = getRoleGroups(displayedRole);
+    const showWorkspaceSwitcher = displayedRole !== "Employee";
+
+    const handleSignOut = async () => {
+        await signOut();
+        clearWorkspace();
+        router.push("/login");
+    };
 
     return (
         <aside className="w-64 border-r border-[var(--color-border)] bg-[var(--color-card)] flex flex-col shrink-0 h-screen">
@@ -101,7 +124,7 @@ export function Sidebar() {
             {/* Role badge */}
             <div className="px-5 py-2.5 border-b border-[var(--color-border)]">
                 <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded ${roleBadge}`}>
-                    {userRole} Portal
+                    {displayedRole} Portal
                 </span>
             </div>
 
@@ -134,16 +157,23 @@ export function Sidebar() {
                 ))}
             </nav>
 
-            {/* User profile */}
+            {/* User profile + logout */}
             <div className="p-4 border-t border-[var(--color-border)]">
                 <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-full bg-gradient-to-tr ${roleConfig.accent} flex items-center justify-center font-bold text-white text-xs shadow-lg shrink-0`}>
-                        {roleConfig.initials}
+                        {initials}
                     </div>
-                    <div className="overflow-hidden">
-                        <p className="text-sm font-medium truncate">{roleConfig.name}</p>
+                    <div className="overflow-hidden flex-1">
+                        <p className="text-sm font-medium truncate">{displayName}</p>
                         <p className="text-xs text-gray-500 truncate">{workspaceName}</p>
                     </div>
+                    <button
+                        onClick={handleSignOut}
+                        title="Sign out"
+                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all shrink-0"
+                    >
+                        <LogOut className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
         </aside>

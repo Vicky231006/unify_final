@@ -1,4 +1,5 @@
 import { WorkspaceProvider } from "@/components/providers/WorkspaceProvider";
+import { AuthProvider } from "@/components/providers/AuthProvider";
 import "./globals.css";
 
 export const metadata = {
@@ -14,9 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
-        <WorkspaceProvider>
-          {children}
-        </WorkspaceProvider>
+        <AuthProvider>
+          <WorkspaceProvider>
+            {children}
+          </WorkspaceProvider>
+        </AuthProvider>
       </body>
     </html>
   );

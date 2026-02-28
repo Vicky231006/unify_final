@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, Send, Sparkles, Loader2, Minimize2, Trash2 } from "lucide-react";
 import { useScreenContent } from "@/lib/hooks/useScreenContent";
+import { useAuth } from "@/components/providers/AuthProvider";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -18,6 +19,7 @@ export function Assistant() {
     const [isLoading, setIsLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const { content: screenContent } = useScreenContent();
+    const { session } = useAuth();
 
     // Load history and window state on mount
     useEffect(() => {
@@ -59,9 +61,18 @@ export function Assistant() {
 
         try {
             // Using 127.0.0.1 to avoid IPv6/CORS quirks on some browsers
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+            if (session?.access_token) {
+                headers["Authorization"] = `Bearer ${session.access_token}`;
+            } else {
+                // If there's no Supabase session but we're on the dashboard, it must be a demo user
+                headers["X-Demo-User"] = "true";
+            }
+
             const response = await fetch("http://127.0.0.1:8000/chat", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({
                     messages: [...messages, userMsg],
                     context: screenContent

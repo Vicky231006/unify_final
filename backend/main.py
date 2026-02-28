@@ -1,23 +1,23 @@
 import os
 import traceback
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
 import google.generativeai as genai
 from dotenv import load_dotenv
+from jose import jwt, JWTError
 
 # Load .env from project root
-# Using resolve() to ensure we have the absolute path
 current_dir = Path(__file__).parent.resolve()
 env_path = current_dir.parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
 app = FastAPI()
 
-# Configure CORS - being more permissive for development
-# IMPORTANT: If allow_origins is ["*"], allow_credentials must be False
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,7 +27,10 @@ app.add_middleware(
 )
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+
 print(f"DEBUG: GEMINI_API_KEY found: {'Yes' if GEMINI_API_KEY else 'No'}")
+print(f"DEBUG: SUPABASE_JWT_SECRET configured: {'Yes' if SUPABASE_JWT_SECRET else 'No (demo-only mode)'}")
 print(f"DEBUG: Looking for .env at: {env_path}")
 
 if GEMINI_API_KEY:
@@ -39,6 +42,59 @@ if GEMINI_API_KEY:
                 print(f" - {m.name}")
     except Exception as e:
         print(f"DEBUG: Could not list models (Network/Auth error?): {e}")
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+async def verify_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    x_demo_user: Optional[str] = None,
+) -> dict:
+    """
+    Validate a Supabase JWT or allow demo users via X-Demo-User header.
+    Returns the decoded JWT payload (or a minimal dict for demo users).
+    """
+    from fastapi import Header
+    return credentials, x_demo_user  # handled below with full header access
+
+from fastapi import Request
+
+async def get_current_user(request: Request) -> dict:
+    """
+    Auth dependency for protected endpoints.
+    - If X-Demo-User: true header is present → allow (demo accounts bypass JWT).
+    - Otherwise verify the Supabase JWT from Authorization: Bearer <token>.
+    """
+    # Demo bypass
+    demo_header = request.headers.get("x-demo-user", "")
+    if demo_header.lower() == "true":
+        return {"sub": "demo", "role": "demo"}
+
+    # JWT verification
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+
+    token = auth_header.split(" ", 1)[1]
+
+    if not SUPABASE_JWT_SECRET:
+        # JWT secret not configured – allow in dev so frontend doesn't break
+        print("WARNING: SUPABASE_JWT_SECRET not set; skipping JWT verification (dev mode).")
+        return {"sub": "unverified", "role": "anon"}
+
+    try:
+        payload = jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+        return payload
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+# ── Models ────────────────────────────────────────────────────────────────────
 
 class Message(BaseModel):
     role: str
@@ -66,12 +122,14 @@ Current Screen Context:
 {context}
 """
 
+# ── Routes ────────────────────────────────────────────────────────────────────
+
 @app.get("/")
 async def root():
     return {"status": "online", "message": "Dashboard Assistant Backend (Gemini 2.5/2.0)"}
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, req: Request, _user: dict = Depends(get_current_user)):
     if not GEMINI_API_KEY or GEMINI_API_KEY == "":
         print("CRITICAL: GEMINI_API_KEY not found or empty in .env")
         raise HTTPException(
@@ -80,17 +138,14 @@ async def chat(request: ChatRequest):
         )
 
     try:
-        # Prepare context and system prompt
         context_str = request.context or "No context provided."
         full_system_prompt = SYSTEM_PROMPT.format(context=context_str)
         
-        # Format history for google-generativeai SDK
         history = []
         for msg in request.messages[:-1]:
             role = "user" if msg.role == "user" else "model"
             history.append({"role": role, "parts": [msg.content]})
             
-        # Try multiple model name variants
         models_to_try = [
             'gemini-2.5-flash',
             'models/gemini-2.5-flash',
@@ -116,17 +171,14 @@ async def chat(request: ChatRequest):
             except Exception as e:
                 print(f"DEBUG: Model {model_name} failed: {e}")
                 last_exception = e
-                # If its just a 404/not found, continue to next model
                 continue
         
-        # If all fail
         raise last_exception
 
     except Exception as e:
         print(f"CHAT ERROR: {str(e)}")
         traceback.print_exc()
         
-        # Friendly hints for common errors
         err_str = str(e)
         if "404" in err_str:
             err_str = f"Gemini model not found. Ensure your API key has access to these specific models. {err_str}"
@@ -137,5 +189,4 @@ async def chat(request: ChatRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # Use string reference for reload
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

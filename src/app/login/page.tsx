@@ -1,20 +1,29 @@
 "use client";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, ArrowRight, Lock, Mail, ChevronDown } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Eye, EyeOff, ArrowRight, Lock, Mail } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { CanvasEffect } from "@/components/landing/CanvasEffect";
+import { supabase } from "@/lib/supabase";
 
-// Demo credentials — in production these come from a JWT-authenticated backend
+// ── Demo credentials (role-testing only – no Supabase needed) ────────────────
 const DEMO_USERS = [
     { email: "alex@acmecorp.com", password: "ceo123", name: "Alex Chen", role: "CEO" as const },
     { email: "sarah@acmecorp.com", password: "mgr123", name: "Sarah Miller", role: "Manager" as const },
     { email: "james@acmecorp.com", password: "emp123", name: "James Wilson", role: "Employee" as const },
 ];
 
+function setDemoCookie() {
+    // Lasts 8 hours – enough for a testing session
+    document.cookie = "unify_demo_session=true; path=/; max-age=28800; SameSite=Lax";
+}
+
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const nextPath = searchParams.get("next") || "/dashboard";
     const { setUserRole } = useWorkspace();
 
     const [email, setEmail] = useState("");
@@ -28,27 +37,51 @@ export default function LoginPage() {
         setError("");
         setIsLoading(true);
 
-        // Simulate network latency
-        await new Promise(r => setTimeout(r, 600));
+        const emailLower = email.toLowerCase().trim();
 
-        const user = DEMO_USERS.find(
-            u => u.email.toLowerCase() === email.toLowerCase().trim() && u.password === password
+        // ── 1. Check demo accounts first ──────────────────────────────────────
+        const demoUser = DEMO_USERS.find(
+            u => u.email === emailLower && u.password === password
         );
 
-        if (!user) {
-            setError("Invalid email or password. Try a demo account below.");
+        if (demoUser) {
+            // Small UX delay so the spinner feels responsive
+            await new Promise(r => setTimeout(r, 400));
+            setUserRole(demoUser.role);
+            setDemoCookie();
+            if (demoUser.role === "Employee") {
+                router.push("/dashboard");
+            } else {
+                router.push("/workspaces");
+            }
+            return;
+        }
+
+        // ── 2. Real Supabase auth ─────────────────────────────────────────────
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+            email: emailLower,
+            password,
+        });
+
+        if (authError || !data.user) {
+            setError(authError?.message || "Invalid email or password. Remember to confirm your email.");
             setIsLoading(false);
             return;
         }
 
-        // Persist role
-        setUserRole(user.role);
+        // ── Fetch true role from database ──────────────────────────────────────
+        const { data: dbUser } = await supabase
+            .from("users")
+            .select("role")
+            .eq("id", data.user.id)
+            .single();
 
-        // Role-based post-login routing:
-        // CEO & Manager → workspaces (choose org)
-        // Employee → dashboard directly (no org switching)
-        if (user.role === "Employee") {
-            router.push("/dashboard");
+        const role = (dbUser?.role as "CEO" | "Manager" | "Employee") || "Employee";
+        setUserRole(role);
+
+        // Redirect: non-Employee roles go to workspace picker
+        if (role === "Employee") {
+            router.push(nextPath === "/login" ? "/dashboard" : nextPath);
         } else {
             router.push("/workspaces");
         }
@@ -156,8 +189,8 @@ export default function LoginPage() {
                                     className="flex flex-col items-center gap-1 p-2 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-primary)]/50 hover:bg-[var(--color-primary)]/5 transition-all text-center"
                                 >
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${u.role === 'CEO' ? 'bg-blue-500/20 text-blue-400' :
-                                            u.role === 'Manager' ? 'bg-purple-500/20 text-purple-400' :
-                                                'bg-emerald-500/20 text-emerald-400'
+                                        u.role === 'Manager' ? 'bg-purple-500/20 text-purple-400' :
+                                            'bg-emerald-500/20 text-emerald-400'
                                         }`}>{u.role}</span>
                                     <span className="text-[10px] text-gray-500 truncate w-full">{u.name}</span>
                                 </button>
@@ -168,7 +201,7 @@ export default function LoginPage() {
 
                 <p className="text-center text-xs text-gray-600 mt-6">
                     New to UNIFY?{" "}
-                    <a href="/" className="text-[var(--color-primary)] hover:underline">Get started</a>
+                    <Link href="/signup" className="text-[var(--color-primary)] hover:underline">Get started</Link>
                 </p>
             </div>
         </div>
