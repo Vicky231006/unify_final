@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 export function Header() {
   return (
@@ -23,12 +24,12 @@ export function Header() {
       </nav>
 
       <div className="flex items-center gap-6">
-        <button className="hidden sm:block text-base font-medium text-neutral-300 hover:text-white transition-colors">
+        <Link href="/login" className="hidden sm:block text-base font-medium text-neutral-300 hover:text-white transition-colors">
           Sign In
-        </button>
-        <button className="px-6 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white text-base font-medium transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+        </Link>
+        <Link href="/login" className="px-6 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white text-base font-medium transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]">
           Get Started
-        </button>
+        </Link>
       </div>
     </motion.header>
   );
