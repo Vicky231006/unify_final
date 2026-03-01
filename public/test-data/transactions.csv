@@ -1,0 +1,27 @@
+date,amount,type,category
+2026-01-03,145000,Revenue,Enterprise Sales
+2026-01-05,28500,Expense,Cloud Infrastructure
+2026-01-08,62000,Revenue,SaaS Subscriptions
+2026-01-10,18000,Expense,Marketing & Advertising
+2026-01-12,95000,Revenue,Enterprise Sales
+2026-01-15,12500,Expense,Salaries & Payroll
+2026-01-18,43000,Revenue,SaaS Subscriptions
+2026-01-20,8200,Expense,Software Licenses
+2026-01-22,210000,Revenue,Enterprise Sales
+2026-01-25,31000,Expense,Cloud Infrastructure
+2026-01-28,55000,Revenue,Professional Services
+2026-01-30,14000,Expense,Office & Operations
+2026-02-03,178000,Revenue,Enterprise Sales
+2026-02-05,29500,Expense,Cloud Infrastructure
+2026-02-07,71000,Revenue,SaaS Subscriptions
+2026-02-10,22000,Expense,Marketing & Advertising
+2026-02-12,48000,Revenue,Professional Services
+2026-02-14,9800,Expense,Software Licenses
+2026-02-17,130000,Revenue,Enterprise Sales
+2026-02-19,15000,Expense,Salaries & Payroll
+2026-02-21,88000,Revenue,SaaS Subscriptions
+2026-02-24,33000,Expense,Cloud Infrastructure
+2026-02-26,42000,Revenue,Professional Services
+2026-02-28,11500,Expense,Office & Operations
+2026-03-01,195000,Revenue,Enterprise Sales
+2026-03-01,35000,Expense,Cloud Infrastructure

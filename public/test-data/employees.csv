@@ -1,0 +1,16 @@
+name,email,role,department,capacity,status
+Sarah Mitchell,sarah.mitchell@nexgen.io,Engineering Lead,Engineering,100,active
+James Okafor,james.okafor@nexgen.io,Senior Developer,Engineering,100,active
+Priya Sharma,priya.sharma@nexgen.io,Frontend Developer,Engineering,90,active
+Lucas Fernandez,lucas.fernandez@nexgen.io,Backend Developer,Engineering,100,active
+Aisha Khan,aisha.khan@nexgen.io,QA Engineer,Engineering,85,active
+Tom Nguyen,tom.nguyen@nexgen.io,DevOps Engineer,Engineering,100,active
+Rachel Chen,rachel.chen@nexgen.io,Marketing Director,Marketing,100,active
+Daniel Park,daniel.park@nexgen.io,Content Strategist,Marketing,90,active
+Sofia Alvarez,sofia.alvarez@nexgen.io,SEO Specialist,Marketing,95,active
+Marcus Williams,marcus.williams@nexgen.io,Sales Manager,Sales,100,active
+Natalie Brooks,natalie.brooks@nexgen.io,Account Executive,Sales,100,active
+Kevin Zhao,kevin.zhao@nexgen.io,Sales Development Rep,Sales,90,active
+Emily Turner,emily.turner@nexgen.io,Product Manager,Product,100,active
+Omar Hassan,omar.hassan@nexgen.io,UX Designer,Product,95,active
+Isabella Ross,isabella.ross@nexgen.io,Business Analyst,Product,90,active

@@ -1,0 +1,32 @@
+task_name,project_name,assignee,type,status,priority,start_date,end_date
+Design system audit and component library,NexGen Platform v3,Omar Hassan,Feature,Done,High,2026-01-15,2026-01-30
+Backend API gateway migration,NexGen Platform v3,Lucas Fernandez,Feature,In Progress,Critical,2026-01-20,2026-03-15
+Authentication service refactor,NexGen Platform v3,James Okafor,Feature,Done,High,2026-01-25,2026-02-20
+CI/CD pipeline setup for microservices,NexGen Platform v3,Tom Nguyen,Task,Done,High,2026-02-01,2026-02-15
+Frontend dashboard components,NexGen Platform v3,Priya Sharma,Feature,In Progress,High,2026-02-10,2026-03-20
+Unit test coverage to 80 percent,NexGen Platform v3,Aisha Khan,Task,Review,Medium,2026-02-15,2026-03-01
+Load testing and performance benchmarks,NexGen Platform v3,Tom Nguyen,Task,To Do,Medium,2026-03-01,2026-03-25
+Data ingestion pipeline design,AI Analytics Engine,Sarah Mitchell,Feature,In Progress,Critical,2026-02-01,2026-03-10
+ML model training infrastructure,AI Analytics Engine,Lucas Fernandez,Feature,In Progress,High,2026-02-10,2026-04-01
+Predictive burnout scoring model,AI Analytics Engine,James Okafor,Feature,To Do,High,2026-03-01,2026-04-15
+Analytics dashboard UI,AI Analytics Engine,Priya Sharma,Feature,To Do,Medium,2026-03-15,2026-05-01
+API documentation for analytics engine,AI Analytics Engine,Emily Turner,Task,To Do,Low,2026-04-01,2026-05-10
+iOS app wireframes,Mobile App Launch,Omar Hassan,Task,To Do,High,2026-03-10,2026-03-25
+React Native project setup,Mobile App Launch,Priya Sharma,Task,To Do,High,2026-03-15,2026-04-01
+Push notification service,Mobile App Launch,Tom Nguyen,Feature,To Do,Medium,2026-04-01,2026-05-01
+SAML integration,Enterprise SSO Integration,James Okafor,Feature,Done,Critical,2025-11-01,2025-12-15
+OAuth2 provider setup,Enterprise SSO Integration,Lucas Fernandez,Feature,Done,High,2025-11-15,2026-01-10
+SSO testing and QA sign-off,Enterprise SSO Integration,Aisha Khan,Task,Done,High,2026-01-15,2026-01-31
+Blog content for Q1 campaign,Q1 Marketing Campaign,Daniel Park,Task,Done,Medium,2026-01-05,2026-01-20
+LinkedIn ad campaign setup,Q1 Marketing Campaign,Rachel Chen,Task,Done,High,2026-01-10,2026-01-15
+Webinar series planning,Q1 Marketing Campaign,Sofia Alvarez,Feature,In Progress,High,2026-01-20,2026-03-15
+SEO keyword targeting refresh,Q1 Marketing Campaign,Sofia Alvarez,Task,Done,Medium,2026-01-15,2026-02-01
+Email nurture sequence,Q1 Marketing Campaign,Daniel Park,Task,Review,Medium,2026-02-01,2026-02-28
+Salesforce data migration,CRM Pipeline Overhaul,Marcus Williams,Feature,In Progress,Critical,2026-02-10,2026-03-20
+Custom field mapping,CRM Pipeline Overhaul,Natalie Brooks,Task,In Progress,High,2026-02-15,2026-03-10
+Sales team training on new CRM,CRM Pipeline Overhaul,Kevin Zhao,Task,To Do,Medium,2026-03-20,2026-04-05
+Pipeline reporting dashboard,CRM Pipeline Overhaul,Emily Turner,Feature,To Do,High,2026-03-10,2026-04-10
+Vulnerability assessment,Security Compliance Audit,Tom Nguyen,Task,Done,Critical,2025-12-01,2026-01-05
+Infrastructure hardening,Security Compliance Audit,James Okafor,Task,Done,Critical,2026-01-05,2026-02-01
+SOC2 evidence collection,Security Compliance Audit,Sarah Mitchell,Task,Done,High,2025-12-15,2026-02-10
+Audit report review,Security Compliance Audit,Emily Turner,Task,Done,High,2026-02-10,2026-02-15

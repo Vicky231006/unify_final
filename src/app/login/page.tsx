@@ -58,32 +58,37 @@ export default function LoginPage() {
         }
 
         // ── 2. Real Supabase auth ─────────────────────────────────────────────
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-            email: emailLower,
-            password,
-        });
+        try {
+            const { data, error: authError } = await supabase.auth.signInWithPassword({
+                email: emailLower,
+                password,
+            });
 
-        if (authError || !data.user) {
-            setError(authError?.message || "Invalid email or password. Remember to confirm your email.");
+            if (authError || !data?.user) {
+                setError(authError?.message || "Invalid email or password. Remember to confirm your email.");
+                setIsLoading(false);
+                return;
+            }
+
+            // ── Fetch true role from database ──────────────────────────────────────
+            const { data: dbUser } = await supabase
+                .from("users")
+                .select("role")
+                .eq("id", data.user.id)
+                .single();
+
+            const role = (dbUser?.role as "CEO" | "Manager" | "Employee") || "Employee";
+            setUserRole(role);
+
+            // Redirect: non-Employee roles go to workspace picker
+            if (role === "Employee") {
+                router.push(nextPath === "/login" ? "/dashboard" : nextPath);
+            } else {
+                router.push("/workspaces");
+            }
+        } catch (err: any) {
+            setError("Failed to connect to authentication server. Please use a demo account.");
             setIsLoading(false);
-            return;
-        }
-
-        // ── Fetch true role from database ──────────────────────────────────────
-        const { data: dbUser } = await supabase
-            .from("users")
-            .select("role")
-            .eq("id", data.user.id)
-            .single();
-
-        const role = (dbUser?.role as "CEO" | "Manager" | "Employee") || "Employee";
-        setUserRole(role);
-
-        // Redirect: non-Employee roles go to workspace picker
-        if (role === "Employee") {
-            router.push(nextPath === "/login" ? "/dashboard" : nextPath);
-        } else {
-            router.push("/workspaces");
         }
     };
 

@@ -275,7 +275,7 @@ export const useAppStore = create<AppState>()(
                     endDate: p.endDate || new Date(now.getTime() + 86400000 * 30).toISOString(),
                 }));
 
-                // Seed new tasks (resolve project & assignee by name)
+                // Seed new tasks — resolve project & assignee by name
                 const newTasks: Task[] = data.tasks.map(t => {
                     const proj = newProjects.find(p => p.name === t.projectName) || newProjects[0];
                     const emp = newEmps.find(e => e.name === t.assigneeName) || null;
@@ -289,11 +289,22 @@ export const useAppStore = create<AppState>()(
                         weight: t.weight ?? 5,
                         startDate: t.startDate || now.toISOString(),
                         endDate: t.endDate || new Date(now.getTime() + 86400000 * 7).toISOString(),
-                        completedDate: t.status === 'Done' ? new Date().toISOString() : null,
+                        completedDate: t.status === 'Done' ? now.toISOString() : null,
                         qualityIndicator: 80,
                         dependencies: [],
                     };
                 });
+
+                // Persist transactions to localStorage for useWorkspaceMetrics hook
+                if (typeof window !== 'undefined' && data.transactions?.length > 0) {
+                    const normalised = data.transactions.map(t => ({
+                        Date: t.Date,
+                        Amount: Number(t.Amount) || 0,
+                        Type: (t.Type === 'Revenue' || t.Type === 'Expense') ? t.Type : 'Revenue',
+                        Category: t.Category || 'Other',
+                    }));
+                    localStorage.setItem('unify_transactions', JSON.stringify(normalised));
+                }
 
                 return {
                     departments: [...keepDepartments, ...newDepts],
@@ -302,8 +313,8 @@ export const useAppStore = create<AppState>()(
                     tasks: [...keepTasks, ...newTasks],
                     activityLogs: [
                         { id: uuidv4(), workspaceId, action: `Ingested CSV data: ${data.employees.length} employees, ${data.projects.length} projects, ${data.tasks.length} tasks`, timestamp: new Date().toISOString() },
-                        ...state.activityLogs
-                    ].slice(0, 100)
+                        ...state.activityLogs,
+                    ].slice(0, 100),
                 };
             }),
         }),

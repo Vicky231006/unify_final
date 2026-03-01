@@ -1,11 +1,12 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Building2, ChevronRight, X, Upload, FileText, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Building2, ChevronRight, X, Upload, FileText, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAppStore, NormalizedWorkspaceData } from "@/store";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { formatDistanceToNow } from "date-fns";
+import { parseCSVsClientSide } from "@/lib/csvParser";
 
 // ── Dummy seed data (used when no CSVs uploaded) ──────────────────────────────
 const DUMMY: NormalizedWorkspaceData = {
@@ -42,6 +43,8 @@ export default function WorkspacesPage() {
     const { workspaces, addWorkspace, setActiveWorkspaceId, bulkIngestWorkspaceData } = useAppStore();
     const { setUserRole, setWorkspaceData } = useWorkspace();
     const router = useRouter();
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
     const selectingRef = useRef(false);
 
     // Modal state
@@ -94,60 +97,116 @@ export default function WorkspacesPage() {
         if (!pendingWsId) return;
         setIsProcessing(true);
         setProcessResult(null);
+        setProcessMsg('Parsing CSV files...');
 
         try {
             let normalized: NormalizedWorkspaceData;
 
+            // ── No files: use demo data ──────────────────────────────────
             if (csvFiles.length === 0) {
-                // Skip — use dummy data
                 normalized = DUMMY;
-                setProcessMsg(`No CSVs uploaded — seeded ${DUMMY.employees.length} employees, ${DUMMY.projects.length} projects, ${DUMMY.tasks.length} tasks from demo data.`);
-                setProcessResult("dummy");
-            } else {
-                // Read files
-                const csvContents = await Promise.all(
-                    csvFiles.map(f => f.text())
-                );
+                setProcessMsg(`No CSVs uploaded — loaded demo data: ${DUMMY.employees.length} employees, ${DUMMY.projects.length} projects.`);
+                setProcessResult('dummy');
+                finalize(normalized);
+                return;
+            }
 
+            // ── STEP 1: Client-side parse (instant, no API) ──────────────
+            const csvContents = await Promise.all(csvFiles.map(f => f.text()));
+            const clientParsed = parseCSVsClientSide(csvContents);
+            const clientHasData = clientParsed.employees.length > 0 || clientParsed.projects.length > 0 || clientParsed.tasks.length > 0;
+
+            setProcessMsg(`Client parsed: ${clientParsed.employees.length} employees, ${clientParsed.projects.length} projects, ${clientParsed.tasks.length} tasks. Enhancing with AI...`);
+
+            // ── STEP 2: Gemini enhancement via SSE ────────────────────────
+            let geminiSucceeded = false;
+            try {
                 const res = await fetch('/api/normalize-csv', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ csvContents }),
+                    signal: AbortSignal.timeout(90_000), // 90s max (covers 4 retries)
                 });
 
-                if (!res.ok) {
-                    const err = await res.json();
-                    if (res.status === 503) {
-                        // API key not configured — fall back to dummy
-                        normalized = DUMMY;
-                        setProcessMsg("Gemini API key not set — seeded demo data. Set GEMINI_API_KEY in .env.local to enable LLM normalization.");
-                        setProcessResult("dummy");
-                    } else {
-                        throw new Error(err.error || 'Normalization failed');
+                if (res.body) {
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+
+                        // Parse SSE events from buffer
+                        const events = buffer.split('\n\n');
+                        buffer = events.pop() || '';
+
+                        for (const event of events) {
+                            // Each SSE event can have multiple lines; only 'data:' lines carry JSON
+                            for (const line of event.split('\n')) {
+                                if (!line.startsWith('data: ')) continue;
+                                const jsonStr = line.slice(6).trim(); // strip 'data: '
+                                if (!jsonStr) continue;
+                                try {
+                                    const msg = JSON.parse(jsonStr);
+
+                                    if (msg.status === 'processing') {
+                                        setProcessMsg('AI normalizing data...');
+                                    } else if (msg.status === 'retrying') {
+                                        const secs = Math.round((msg.waitMs || 5000) / 1000);
+                                        setProcessMsg(`Rate limited — retrying in ${secs}s (attempt ${(msg.attempt ?? 0) + 1}/4)...`);
+                                    } else if (msg.status === 'done' && msg.result) {
+                                        normalized = msg.result;
+                                        const r = msg.result;
+                                        setProcessMsg(`AI extracted: ${r.employees.length} employees, ${r.projects.length} projects, ${r.tasks.length} tasks, ${r.transactions.length} transactions.`);
+                                        setProcessResult('success');
+                                        geminiSucceeded = true;
+                                    } else if (msg.status === 'error') {
+                                        console.warn('[normalize-csv] Gemini error:', msg.error);
+                                    }
+                                } catch (parseErr) {
+                                    // skip malformed JSON lines silently
+                                }
+                            }
+                        }
+
+                        if (geminiSucceeded) break;
                     }
+                }
+            } catch (fetchErr: any) {
+                console.warn('[normalize-csv] Gemini fetch failed:', fetchErr.message);
+            }
+
+            // ── STEP 3: Fallback to client-side if Gemini failed ─────────
+            if (!geminiSucceeded) {
+                normalized = clientHasData ? clientParsed : DUMMY;
+                if (clientHasData) {
+                    setProcessMsg(`AI unavailable — using client-parsed data: ${clientParsed.employees.length} employees, ${clientParsed.projects.length} projects, ${clientParsed.tasks.length} tasks.`);
+                    setProcessResult('dummy');
                 } else {
-                    normalized = await res.json();
-                    setProcessMsg(`Extracted ${normalized.employees.length} employees, ${normalized.projects.length} projects, ${normalized.tasks.length} tasks, ${normalized.transactions.length} transactions from ${csvFiles.length} file(s).`);
-                    setProcessResult("success");
+                    setProcessMsg('Could not parse CSV — loaded demo data instead.');
+                    setProcessResult('dummy');
                 }
             }
 
-            // Inject into store
-            bulkIngestWorkspaceData(pendingWsId, normalized!);
-
-            // Set transactions in WorkspaceContext too
-            setWorkspaceData(newWsName, pendingWsId, normalized!.transactions as any);
-
-            // Set role
-            setUserRole(newWsRole as any);
+            finalize(normalized!);
 
         } catch (err: any) {
             setProcessMsg(err.message || 'An error occurred');
-            setProcessResult("error");
-        } finally {
+            setProcessResult('error');
             setIsProcessing(false);
         }
     };
+
+    const finalize = (normalized: NormalizedWorkspaceData) => {
+        if (!pendingWsId) return;
+        bulkIngestWorkspaceData(pendingWsId, normalized);
+        setWorkspaceData(newWsName, pendingWsId, normalized.transactions as any);
+        setUserRole(newWsRole as any);
+        setIsProcessing(false);
+    };
+
 
     // Step 2b: finish — set active workspace and navigate
     const handleFinish = () => {
@@ -197,7 +256,9 @@ export default function WorkspacesPage() {
                             <h3 className="text-lg font-bold mb-1 group-hover:text-[var(--color-primary)] transition-colors">{ws.name}</h3>
                             <p className="text-sm text-gray-400 mb-6">{ws.role}</p>
                             <div className="mt-auto flex items-center justify-between text-xs text-gray-500 border-t border-[var(--color-border)] pt-4">
-                                <span>Last active: {ws.lastActive ? formatDistanceToNow(new Date(ws.lastActive), { addSuffix: true }) : 'Just now'}</span>
+                                <span suppressHydrationWarning>
+                                    Last active: {mounted && ws.lastActive ? formatDistanceToNow(new Date(ws.lastActive), { addSuffix: true }) : '—'}
+                                </span>
                                 <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                             </div>
                         </motion.div>

@@ -1,0 +1,9 @@
+project_name,description,status,start_date,end_date
+NexGen Platform v3,Complete redesign and rebuild of the core product platform with microservices,In Progress,2026-01-15,2026-04-30
+AI Analytics Engine,Build internal ML pipeline for predictive workforce analytics,In Progress,2026-02-01,2026-05-15
+Mobile App Launch,Native iOS and Android apps for NexGen workforce management,Not Started,2026-03-10,2026-07-01
+Enterprise SSO Integration,SAML and OAuth2 single sign-on for enterprise clients,Completed,2025-11-01,2026-01-31
+Q1 Marketing Campaign,Multi-channel demand generation targeting mid-market SaaS companies,In Progress,2026-01-01,2026-03-31
+CRM Pipeline Overhaul,Migrate from legacy CRM to Salesforce with custom NexGen integrations,In Progress,2026-02-10,2026-04-15
+Security Compliance Audit,SOC2 Type II audit preparation and infrastructure hardening,Completed,2025-12-01,2026-02-15
+Customer Onboarding 2.0,Redesign onboarding flow reducing time-to-value from 2 weeks to 3 days,Not Started,2026-04-01,2026-06-30
