@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/store";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
@@ -143,8 +143,8 @@ function TaskDetailPanel({
 
                 {/* Deadline banner */}
                 <div className={`mx-5 mt-4 rounded-xl p-3 flex items-center gap-3 border ${isOverdue ? "bg-red-500/10 border-red-500/20" :
-                        isDone ? "bg-emerald-500/10 border-emerald-500/20" :
-                            "bg-blue-500/10 border-blue-500/20"
+                    isDone ? "bg-emerald-500/10 border-emerald-500/20" :
+                        "bg-blue-500/10 border-blue-500/20"
                     }`}>
                     {isOverdue ? <AlertCircle className="w-4 h-4 text-red-400 shrink-0" /> :
                         isDone ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> :
@@ -170,7 +170,7 @@ function TaskDetailPanel({
                             onDrop={e => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
                             onClick={() => fileRef.current?.click()}
                             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all mb-4 ${isDragging ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10" :
-                                    "border-white/10 hover:border-white/20 hover:bg-white/5"
+                                "border-white/10 hover:border-white/20 hover:bg-white/5"
                                 }`}
                         >
                             <input ref={fileRef} type="file" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
@@ -285,10 +285,10 @@ function TaskCard({ task, project, assignedByName, onClick }: {
                         {task.type || "Task"}
                     </span>
                     <span className={`text-[10px] px-2 py-0.5 rounded uppercase tracking-wider font-bold border ${isDone ? "text-emerald-400 bg-emerald-400/10 border-emerald-500/20" :
-                            isOverdue ? "text-red-400 bg-red-400/10 border-red-500/20" :
-                                task.status === "Review" ? "text-yellow-400 bg-yellow-400/10 border-yellow-500/20" :
-                                    task.status === "In Progress" ? "text-blue-400 bg-blue-400/10 border-blue-500/20" :
-                                        "text-gray-500 bg-white/5 border-white/10"
+                        isOverdue ? "text-red-400 bg-red-400/10 border-red-500/20" :
+                            task.status === "Review" ? "text-yellow-400 bg-yellow-400/10 border-yellow-500/20" :
+                                task.status === "In Progress" ? "text-blue-400 bg-blue-400/10 border-blue-500/20" :
+                                    "text-gray-500 bg-white/5 border-white/10"
                         }`}>
                         {isOverdue && !isDone ? "Overdue" : task.status}
                     </span>
@@ -330,15 +330,22 @@ function TaskCard({ task, project, assignedByName, onClick }: {
 // Main Employee View
 // ────────────────────────────────────────────────────────────────────────────────
 export function EmployeeView() {
-    const { employees, tasks, projects, activeWorkspaceId } = useAppStore();
+    const { employees, tasks, projects, activeWorkspaceId, workspaces, fetchSupabaseTasks } = useAppStore();
+    const targetWorkspaceId = activeWorkspaceId || workspaces[0]?.id || null;
     const [selectedTask, setSelectedTask] = useState<any | null>(null);
     const [filter, setFilter] = useState<"All" | "In Progress" | "Review" | "Done" | "Overdue">("All");
 
+    useEffect(() => {
+        if (targetWorkspaceId) {
+            fetchSupabaseTasks(targetWorkspaceId);
+        }
+    }, [targetWorkspaceId, fetchSupabaseTasks]);
+
     // Active "user" = first employee in workspace
-    const currentUser = employees.find(e => e.workspaceId === activeWorkspaceId);
+    const currentUser = employees.find(e => e.workspaceId === targetWorkspaceId);
     const workspaceTasks = tasks.filter(t => {
         const proj = projects.find(p => p.id === t.projectId);
-        return proj?.workspaceId === activeWorkspaceId;
+        return proj?.workspaceId === targetWorkspaceId;
     });
 
     const userTasks = currentUser
@@ -370,7 +377,7 @@ export function EmployeeView() {
     const getAssignedBy = (task: any) => {
         const proj = projects.find(p => p.id === task.projectId);
         if (!proj) return "Manager";
-        const dept = employees.find(e => e.workspaceId === activeWorkspaceId && e.role?.toLowerCase().includes("manager"));
+        const dept = employees.find(e => e.workspaceId === targetWorkspaceId && e.role?.toLowerCase().includes("manager"));
         return dept?.name || "Project Manager";
     };
 
@@ -412,8 +419,8 @@ export function EmployeeView() {
                                 key={f}
                                 onClick={() => setFilter(f)}
                                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${filter === f
-                                        ? "bg-[var(--color-primary)] text-white shadow-sm"
-                                        : "text-gray-400 hover:text-white hover:bg-white/5"
+                                    ? "bg-[var(--color-primary)] text-white shadow-sm"
+                                    : "text-gray-400 hover:text-white hover:bg-white/5"
                                     }`}
                             >
                                 {f}

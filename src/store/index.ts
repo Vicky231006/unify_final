@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '@/lib/supabase';
 
 export type Workspace = {
     id: string;
@@ -125,6 +126,7 @@ export interface AppState {
 
     logAction: (workspaceId: string, action: string) => void;
     bulkIngestWorkspaceData: (workspaceId: string, data: NormalizedWorkspaceData) => void;
+    fetchSupabaseTasks: (workspaceId: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -217,29 +219,72 @@ export const useAppStore = create<AppState>()(
                 };
             }),
 
-            addTask: (task) => set((state) => {
-                get().logAction(state.projects.find(p => p.id === task.projectId)?.workspaceId || '', `Created task: ${task.title}`);
-                return { tasks: [...state.tasks, { ...task, id: uuidv4() }] };
-            }),
-            updateTask: (id, data) => set((state) => {
-                const prevTask = state.tasks.find(t => t.id === id);
-                if (prevTask && prevTask.status !== data.status && data.status) {
-                    const wsId = state.projects.find(p => p.id === prevTask.projectId)?.workspaceId || '';
-                    get().logAction(wsId, `Task ${prevTask.title} moved from ${prevTask.status} to ${data.status}`);
+            addTask: async (task) => {
+                const id = uuidv4();
+                const workspaceId = get().projects.find(p => p.id === task.projectId)?.workspaceId || '';
+
+                set((state) => {
+                    get().logAction(workspaceId, `Created task: ${task.title}`);
+                    return { tasks: [...state.tasks, { ...task, id }] };
+                });
+
+                if (workspaceId) {
+                    await supabase.from('tasks').insert({
+                        id,
+                        workspace_id: workspaceId,
+                        project_id: task.projectId,
+                        title: task.title,
+                        type: task.type,
+                        assignee_id: task.assigneeId,
+                        status: task.status,
+                        weight: task.weight,
+                        start_date: task.startDate,
+                        end_date: task.endDate,
+                        completed_date: task.completedDate,
+                        quality_indicator: task.qualityIndicator
+                    });
                 }
-                return {
-                    tasks: state.tasks.map(t => t.id === id ? { ...t, ...data } : t)
-                };
-            }),
-            deleteTask: (id) => set((state) => {
-                const filteredTasks = state.tasks.filter(t => t.id !== id);
-                return {
-                    tasks: filteredTasks.map(t => ({
-                        ...t,
-                        dependencies: t.dependencies.filter(depId => depId !== id)
-                    }))
-                };
-            }),
+            },
+            updateTask: async (id, data) => {
+                set((state) => {
+                    const prevTask = state.tasks.find(t => t.id === id);
+                    if (prevTask && prevTask.status !== data.status && data.status) {
+                        const wsId = state.projects.find(p => p.id === prevTask.projectId)?.workspaceId || '';
+                        get().logAction(wsId, `Task ${prevTask.title} moved from ${prevTask.status} to ${data.status}`);
+                    }
+                    return {
+                        tasks: state.tasks.map(t => t.id === id ? { ...t, ...data } : t)
+                    };
+                });
+
+                const updatePayload: any = {};
+                if (data.projectId !== undefined) updatePayload.project_id = data.projectId;
+                if (data.title !== undefined) updatePayload.title = data.title;
+                if (data.type !== undefined) updatePayload.type = data.type;
+                if (data.assigneeId !== undefined) updatePayload.assignee_id = data.assigneeId;
+                if (data.status !== undefined) updatePayload.status = data.status;
+                if (data.weight !== undefined) updatePayload.weight = data.weight;
+                if (data.startDate !== undefined) updatePayload.start_date = data.startDate;
+                if (data.endDate !== undefined) updatePayload.end_date = data.endDate;
+                if (data.completedDate !== undefined) updatePayload.completed_date = data.completedDate;
+                if (data.qualityIndicator !== undefined) updatePayload.quality_indicator = data.qualityIndicator;
+
+                if (Object.keys(updatePayload).length > 0) {
+                    await supabase.from('tasks').update(updatePayload).eq('id', id);
+                }
+            },
+            deleteTask: async (id) => {
+                set((state) => {
+                    const filteredTasks = state.tasks.filter(t => t.id !== id);
+                    return {
+                        tasks: filteredTasks.map(t => ({
+                            ...t,
+                            dependencies: t.dependencies.filter(depId => depId !== id)
+                        }))
+                    };
+                });
+                await supabase.from('tasks').delete().eq('id', id);
+            },
 
             logAction: (workspaceId: string, action: string) => set((state) => {
                 if (!workspaceId) return state;
@@ -247,6 +292,39 @@ export const useAppStore = create<AppState>()(
                     activityLogs: [{ id: uuidv4(), workspaceId, action, timestamp: new Date().toISOString() }, ...state.activityLogs].slice(0, 100)
                 };
             }),
+
+            fetchSupabaseTasks: async (workspaceId: string) => {
+                if (!workspaceId) return;
+                const { data, error } = await supabase.from('tasks').select('*').eq('workspace_id', workspaceId);
+
+                if (!error && data) {
+                    set((state) => {
+                        const mappedTasks = data.map(t => ({
+                            id: t.id,
+                            projectId: t.project_id || '',
+                            title: t.title,
+                            type: t.type || 'Task',
+                            assigneeId: t.assignee_id,
+                            status: t.status as any,
+                            weight: t.weight,
+                            startDate: t.start_date,
+                            endDate: t.end_date,
+                            completedDate: t.completed_date,
+                            qualityIndicator: t.quality_indicator,
+                            dependencies: []
+                        }));
+
+                        // Overwrite existing local tasks for this workspace 
+                        // to ensure sync with remote truth
+                        const otherTasks = state.tasks.filter(st => {
+                            const proj = state.projects.find(p => p.id === st.projectId);
+                            return proj?.workspaceId !== workspaceId;
+                        });
+
+                        return { tasks: [...otherTasks, ...mappedTasks] };
+                    });
+                }
+            },
 
             bulkIngestWorkspaceData: (workspaceId, data) => set((state) => {
                 // Remove existing data for this workspace
@@ -274,14 +352,26 @@ export const useAppStore = create<AppState>()(
 
                 // Seed new projects
                 const now = new Date();
-                const newProjects = data.projects.map(p => ({
+                let newProjects = data.projects.map(p => ({
                     id: uuidv4(), workspaceId,
-                    name: p.name,
+                    name: p.name || 'Untitled Project',
                     description: p.description || '',
                     status: (p.status as Project['status']) || 'Not Started',
                     startDate: p.startDate || now.toISOString(),
                     endDate: p.endDate || new Date(now.getTime() + 86400000 * 30).toISOString(),
                 }));
+
+                // If tasks exist but no projects, create a default one so tasks aren't orphaned
+                if (newProjects.length === 0 && data.tasks.length > 0) {
+                    newProjects = [{
+                        id: uuidv4(), workspaceId,
+                        name: 'General Project',
+                        description: 'Auto-created to hold imported tasks',
+                        status: 'In Progress',
+                        startDate: now.toISOString(),
+                        endDate: new Date(now.getTime() + 86400000 * 30).toISOString(),
+                    }];
+                }
 
                 // Seed new tasks — resolve project & assignee by name
                 const newTasks: Task[] = data.tasks.map(t => {

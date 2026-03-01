@@ -181,6 +181,143 @@ async def chat(request: ChatRequest, req: Request, _user: dict = Depends(get_cur
             
         raise HTTPException(status_code=500, detail=err_str)
 
+import json
+from fastapi.responses import StreamingResponse
+import asyncio
+
+global_dashboard_data = None
+global_dashboard_version = 0
+
+DB_FILE = os.path.join(current_dir, "dashboard_db.json")
+if os.path.exists(DB_FILE):
+    try:
+        with open(DB_FILE, "r") as f:
+            persisted = json.load(f)
+            global_dashboard_data = persisted.get("data")
+            global_dashboard_version = persisted.get("version", 0)
+    except Exception as e:
+        print(f"DEBUG: Failed to load {DB_FILE}: {e}")
+
+class NormalizeCsvRequest(BaseModel):
+    csvContents: List[str]
+
+@app.post("/normalize-csv")
+async def normalize_csv(request: NormalizeCsvRequest, req: Request):
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "":
+        async def error_stream():
+            yield f"data: {json.dumps({'status': 'error', 'error': 'GEMINI_API_KEY not configured', 'code': 503})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    if not request.csvContents:
+        async def error_stream():
+            yield f"data: {json.dumps({'status': 'error', 'error': 'No CSV content provided', 'code': 400})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
+    def truncate(csv: str, max_rows=50) -> str:
+        lines = [l for l in csv.strip().split('\n') if l.strip()]
+        if len(lines) <= max_rows + 1:
+            return csv
+        return '\n'.join(lines[:max_rows + 1])
+
+    PROMPT = '''Convert these CSV files to JSON. Return ONLY valid JSON, no markdown, no explanation.
+
+Schema:
+{"employees":[{"name":"","role":"","email":"","capacity":100}],"departments":[{"name":""}],"projects":[{"name":"","description":"","status":"Not Started","startDate":"2024-01-01T00:00:00Z","endDate":"2024-01-31T00:00:00Z"}],"tasks":[{"title":"","type":"Task","assigneeName":"","projectName":"","status":"To Do","weight":5,"startDate":"2024-01-01T00:00:00Z","endDate":"2024-01-07T00:00:00Z"}],"transactions":[{"Date":"2024-01-01","Amount":0,"Type":"Revenue","Category":""}]}
+
+- status options — project: "Not Started"|"In Progress"|"Completed", task: "To Do"|"In Progress"|"Review"|"Done", transaction type: "Revenue"|"Expense"
+- Map column headers intelligently, employee CSVs → employees+departments, project/task CSVs → projects+tasks, financial CSVs → transactions
+- Always return all 5 arrays (empty [] if not applicable)'''
+
+    user_content = "\n\n".join([f"=== FILE {i+1} ===\n{truncate(csv)}" for i, csv in enumerate(request.csvContents)])
+
+    async def event_generator():
+        delays = [0, 5, 15, 30]
+        last_error = ""
+
+        for attempt, delay in enumerate(delays):
+            if delay > 0:
+                yield f"data: {json.dumps({'status': 'retrying', 'attempt': attempt, 'waitMs': delay * 1000, 'message': f'Rate limited — retrying in {delay}s...'})}\n\n"
+                await asyncio.sleep(delay)
+            else:
+                yield f"data: {json.dumps({'status': 'processing', 'message': 'Sending to Gemini...'})}\n\n"
+
+            try:
+                model_name = 'gemini-2.5-flash'
+                print(f"DEBUG: CSV Normalization using strictly model: {model_name} (Workaround)")
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        types.Content(role="user", parts=[types.Part.from_text(text=PROMPT), types.Part.from_text(text='\nCSV:\n' + user_content)])
+                    ],
+                    config=types.GenerateContentConfig(
+                        temperature=0.1,
+                        max_output_tokens=2048,
+                        response_mime_type="application/json",
+                    )
+                )
+
+                raw_text = response.text or "{}"
+                
+                try:
+                    with open("debug_gemini.log", "a") as df:
+                        df.write(f"=== INPUT ===\n{user_content}\n=== RAW OUTPUT ===\n{raw_text}\n\n")
+                except:
+                    pass
+                
+                try:
+                    normalized = json.loads(raw_text)
+                except Exception:
+                    # In case of markdown formatting despite instruction
+                    import re
+                    match = re.search(r'```(?:json)?\s*([\s\S]*?)```', raw_text)
+                    normalized = json.loads(match.group(1)) if match else {}
+
+                safe_result = {
+                    "employees": normalized.get("employees", []) if isinstance(normalized.get("employees"), list) else [],
+                    "departments": normalized.get("departments", []) if isinstance(normalized.get("departments"), list) else [],
+                    "projects": normalized.get("projects", []) if isinstance(normalized.get("projects"), list) else [],
+                    "tasks": normalized.get("tasks", []) if isinstance(normalized.get("tasks"), list) else [],
+                    "transactions": normalized.get("transactions", []) if isinstance(normalized.get("transactions"), list) else [],
+                }
+                
+                global global_dashboard_data
+                global global_dashboard_version
+                global_dashboard_data = safe_result
+                global_dashboard_version += 1
+                
+                try:
+                    with open(DB_FILE, "w") as f:
+                        json.dump({"data": global_dashboard_data, "version": global_dashboard_version}, f)
+                except Exception as e:
+                    print(f"DEBUG: Failed to save DB_FILE: {e}")
+
+                yield f"data: {json.dumps({'status': 'done', 'result': safe_result})}\n\n"
+                return
+
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    last_error = f"Rate limited (429)"
+                    if attempt == len(delays) - 1:
+                        yield f"data: {json.dumps({'status': 'error', 'error': '429 — quota exceeded. Your client-side parsed data will be used instead.', 'code': 429})}\n\n"
+                        return
+                    continue
+                
+                print(f"DEBUG: CSV Normalization failed: {e}")
+                last_error = f"Gemini error: {err_str}"
+                yield f"data: {json.dumps({'status': 'error', 'error': last_error, 'code': 500})}\n\n"
+                return
+
+        yield f"data: {json.dumps({'status': 'error', 'error': last_error or 'All retries exhausted', 'code': 429})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/dashboard-data")
+async def get_dashboard_data():
+    if not global_dashboard_data:
+        return {"data": None, "version": global_dashboard_version}
+    return {"data": global_dashboard_data, "version": global_dashboard_version}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

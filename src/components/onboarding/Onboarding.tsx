@@ -5,6 +5,7 @@ import { BrainCircuit, Network, BarChart3, ChevronRight, ArrowRight, UploadCloud
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { useAppStore } from "@/store";
+import { parseCSVsClientSide } from "@/lib/csvParser";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Department {
@@ -191,54 +192,68 @@ export function Onboarding() {
         }
 
         try {
-            setProcessMsg(`Normalizing ${csvFiles.length} files with AI...`);
+            setProcessMsg(`Parsing ${csvFiles.length} files locally...`);
             const csvContents = await Promise.all(csvFiles.map(f => f.text()));
 
-            const res = await fetch('/api/normalize-csv', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ csvContents }),
-            });
+            // Try client-side parser first
+            const clientParsed = parseCSVsClientSide(csvContents);
+            const hasData = clientParsed.employees.length > 0 ||
+                clientParsed.projects.length > 0 ||
+                clientParsed.tasks.length > 0 ||
+                clientParsed.transactions.length > 0;
 
-            if (!res.body) throw new Error("Connection failed");
+            let finalResult = clientParsed;
 
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let geminiResult: any = null;
+            // FALLBACK TO AI
+            if (!hasData) {
+                setProcessMsg("Local parser found no rows. Trying AI fallback...");
+                const res = await fetch('http://127.0.0.1:8000/normalize-csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csvContents }),
+                });
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+                if (res.body) {
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = JSON.parse(line.slice(6));
-                        if (data.status === 'retrying') {
-                            setProcessMsg(`Rate limited, retrying in ${data.waitMs / 1000}s...`);
-                        } else if (data.status === 'done') {
-                            geminiResult = data.result;
-                        } else if (data.status === 'error') {
-                            throw new Error(data.error);
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value);
+                        const lines = chunk.split('\n\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    if (data.status === 'done') {
+                                        finalResult = data.result;
+                                    } else if (data.status === 'error') {
+                                        console.warn("AI Fallback failed:", data.error);
+                                    }
+                                } catch (e) { }
+                            }
                         }
                     }
                 }
             }
 
-            if (geminiResult) {
-                bulkIngestWorkspaceData(wsId, geminiResult);
-                setWorkspaceProviderData(wsName, managerId, geminiResult.transactions || []);
-                setWsProviderUserRole(onboardingRole);
-                setActiveWorkspaceId(wsId);
-                setProcessMsg("AI normalization complete. Workspace ready.");
-                setProcessResult("success");
-            } else {
-                throw new Error("AI failed to return data");
-            }
+            bulkIngestWorkspaceData(wsId, finalResult);
+
+            const normalizedTxs = (finalResult.transactions || []).map((t: any) => ({
+                ...t,
+                Amount: Number(t.Amount) || 0
+            }));
+            setWorkspaceProviderData(wsName, managerId, normalizedTxs);
+
+            setWsProviderUserRole(onboardingRole);
+            setActiveWorkspaceId(wsId);
+            setProcessMsg(hasData ? "Local parsing complete. Workspace ready." : "AI normalization complete. Workspace ready.");
+            setProcessResult("success");
 
         } catch (err: any) {
-            setProcessMsg(`AI Error: ${err.message}. Workspace created with manual details only.`);
+            setProcessMsg(`Error: ${err.message}. Workspace created with manual details only.`);
             setProcessResult("error");
             setActiveWorkspaceId(wsId);
         } finally {

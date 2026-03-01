@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '@/store';
 import { calculateBurnoutRisk, calculatePerformanceScore } from '@/lib/analytics';
 import { ProjectTaskManagement } from './ProjectTaskManagement';
@@ -143,8 +143,14 @@ function AssignTaskModal({ onClose }: { onClose: () => void }) {
 
 // ── Manager View ───────────────────────────────────────────────────────────────
 export function ManagerView() {
-    const { employees, tasks, projects, activityLogs, activeWorkspaceId } = useAppStore();
+    const { employees, tasks, projects, activityLogs, activeWorkspaceId, fetchSupabaseTasks } = useAppStore();
     const [showAssignModal, setShowAssignModal] = useState(false);
+
+    useEffect(() => {
+        if (activeWorkspaceId) {
+            fetchSupabaseTasks(activeWorkspaceId);
+        }
+    }, [activeWorkspaceId, fetchSupabaseTasks]);
 
     const activeEmployees = employees.filter(e => e.workspaceId === activeWorkspaceId);
 

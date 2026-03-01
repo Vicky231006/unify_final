@@ -124,21 +124,33 @@ type CSVType = 'employee' | 'project' | 'task' | 'transaction' | 'unknown';
 function detectCSVType(headers: string[]): CSVType {
     const h = headers.join(' ');
 
-    const employeeScore = [
-        /name/i, /email/i, /role|title|position|designation/i, /salary|pay|wage/i, /department|dept/i
-    ].filter(r => r.test(h)).length;
+    let employeeScore = 0;
+    if (/email|mail/i.test(h)) employeeScore += 3;
+    if (/role|title|position|designation/i.test(h)) employeeScore += 2;
+    if (/salary|pay|wage/i.test(h)) employeeScore += 1;
+    if (/department|dept|team/i.test(h)) employeeScore += 1;
+    if (/(^|[ _])(employee|staff|member)(s|name)?[ _]?$|name|first|last/i.test(h)) employeeScore += 1;
 
-    const projectScore = [
-        /project/i, /initiative|program/i, /milestone/i, /phase/i
-    ].filter(r => r.test(h)).length;
+    let projectScore = 0;
+    if (/project|initiative|program/i.test(h)) projectScore += 3;
+    if (/description|objective|summary/i.test(h)) projectScore += 1;
+    if (/start.?date/i.test(h)) projectScore += 1;
+    if (/end.?date|deadline/i.test(h)) projectScore += 1;
+    if (/status|phase|state/i.test(h)) projectScore += 1;
 
-    const taskScore = [
-        /task|ticket|issue|story/i, /assignee|assigned/i, /sprint|epic/i, /story.?point/i
-    ].filter(r => r.test(h)).length;
+    let taskScore = 0;
+    if (/task|ticket|issue|story/i.test(h)) taskScore += 3;
+    if (/assignee|assigned|owner/i.test(h)) taskScore += 2;
+    if (/sprint|epic/i.test(h)) taskScore += 1;
+    if (/weight|priority|points|effort/i.test(h)) taskScore += 1;
+    if (/status|progress/i.test(h)) taskScore += 1;
 
-    const transactionScore = [
-        /amount|revenue|cost|sales/i, /transaction|payment|invoice/i, /expense/i, /price|value/i
-    ].filter(r => r.test(h)).length;
+    let transactionScore = 0;
+    if (/amount|revenue|cost|sales|expense/i.test(h)) transactionScore += 3;
+    if (/transaction|payment|invoice/i.test(h)) transactionScore += 2;
+    if (/price|value/i.test(h)) transactionScore += 1;
+    if (/category|label/i.test(h)) transactionScore += 1;
+    if (/date|period/i.test(h)) transactionScore += 1;
 
     const scores: [CSVType, number][] = [
         ['employee', employeeScore],
@@ -146,9 +158,20 @@ function detectCSVType(headers: string[]): CSVType {
         ['task', taskScore],
         ['transaction', transactionScore],
     ];
+
     scores.sort((a, b) => b[1] - a[1]);
 
-    return scores[0][1] > 0 ? scores[0][0] : 'unknown';
+    // Fast fail for random unusable tables
+    if (scores[0][1] === 0) return 'unknown';
+
+    // Tie-matching tie breaker
+    if (scores[0][1] === scores[1][1]) {
+        if (/project/i.test(h)) return 'project';
+        if (/task|issue|ticket/i.test(h)) return 'task';
+        if (/amount|expense/i.test(h)) return 'transaction';
+    }
+
+    return scores[0][0];
 }
 
 // ── Per-type parsers ──────────────────────────────────────────────────────────
@@ -162,7 +185,7 @@ function parseEmployeeCSV(headers: string[], rows: string[][]): NormalizedWorksp
     return rows
         .filter(row => row.length > 0 && row.some(c => c.trim()))
         .map(row => ({
-            name: nameIdx !== -1 ? row[nameIdx] || 'Unknown' : row[0] || 'Unknown',
+            name: nameIdx !== -1 ? row[nameIdx] || 'Unknown' : '',
             email: emailIdx !== -1 ? row[emailIdx] || '' : '',
             role: roleIdx !== -1 ? row[roleIdx] || 'Employee' : (deptIdx !== -1 ? row[deptIdx] || 'Employee' : 'Employee'),
             capacity: capIdx !== -1 ? (parseFloat(row[capIdx]) || 100) : 100,
@@ -192,7 +215,7 @@ function parseProjectCSV(headers: string[], rows: string[][]): NormalizedWorkspa
     return rows
         .filter(row => row.length > 0 && row.some(c => c.trim()))
         .map((row, i) => ({
-            name: nameIdx !== -1 ? row[nameIdx] || `Project ${i + 1}` : row[0] || `Project ${i + 1}`,
+            name: nameIdx !== -1 ? row[nameIdx] || `Project ${i + 1}` : '',
             description: descIdx !== -1 ? row[descIdx] || '' : '',
             status: statIdx !== -1 ? normalizeStatus(row[statIdx] || '', 'project') : 'Not Started',
             startDate: startIdx !== -1 ? safeDate(row[startIdx]) : now.toISOString(),
@@ -216,7 +239,7 @@ function parseTaskCSV(headers: string[], rows: string[][], projects: NormalizedW
     return rows
         .filter(row => row.length > 0 && row.some(c => c.trim()))
         .map((row, i) => ({
-            title: titleIdx !== -1 ? row[titleIdx] || `Task ${i + 1}` : row[0] || `Task ${i + 1}`,
+            title: titleIdx !== -1 ? row[titleIdx] || `Task ${i + 1}` : '',
             assigneeName: assignIdx !== -1 ? row[assignIdx] || '' : '',
             projectName: projIdx !== -1 ? row[projIdx] || defaultProj : defaultProj,
             status: statIdx !== -1 ? normalizeStatus(row[statIdx] || '', 'task') : 'To Do',

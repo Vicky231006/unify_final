@@ -16,11 +16,12 @@ const tooltipStyle = {
 };
 
 export function CEOView() {
-    const { activeWorkspaceId, activityLogs } = useAppStore();
-    const m = useWorkspaceMetrics(activeWorkspaceId);
+    const { activeWorkspaceId, workspaces, activityLogs } = useAppStore();
+    const targetWorkspaceId = activeWorkspaceId || workspaces[0]?.id || null;
+    const m = useWorkspaceMetrics(targetWorkspaceId);
 
     const recentLogs = activityLogs
-        .filter(l => l.workspaceId === activeWorkspaceId)
+        .filter(l => l.workspaceId === targetWorkspaceId)
         .slice(0, 10);
 
     // KPI cards

@@ -38,6 +38,7 @@
 
 import { useMemo } from 'react';
 import { useAppStore, Employee, Task, Project } from '@/store';
+import { useWorkspace } from '@/components/providers/WorkspaceProvider';
 import { parseISO, isBefore, isAfter, subDays, startOfDay } from 'date-fns';
 import { calculateBurnoutRisk } from './analytics';
 
@@ -102,6 +103,7 @@ function clamp(v: number, lo = 0, hi = 100) { return Math.max(lo, Math.min(hi, v
 // ── Hook ───────────────────────────────────────────────────────────────────
 export function useWorkspaceMetrics(workspaceId: string | null): OrgMetrics {
     const { employees, tasks, projects, departments } = useAppStore();
+    const { transactions } = useWorkspace();
 
     return useMemo<OrgMetrics>(() => {
         if (!workspaceId) return emptyMetrics();
@@ -118,13 +120,8 @@ export function useWorkspaceMetrics(workspaceId: string | null): OrgMetrics {
         const wsEmps = employees.filter(e => e.workspaceId === workspaceId);
         const wsDepts = departments.filter(d => d.workspaceId === workspaceId);
 
-        // ── Financial: read from WorkspaceContext transactions via localStorage ──
-        // We read directly from localStorage so we don't need WorkspaceContext prop-drilling
-        let txs: Array<{ Date: string; Amount: number; Type: string; Category: string }> = [];
-        try {
-            const raw = typeof window !== 'undefined' ? localStorage.getItem('unify_transactions') : null;
-            if (raw) txs = JSON.parse(raw);
-        } catch { /* ignore */ }
+        // ── Financial: read from WorkspaceContext ────────────────────────
+        const txs: Array<{ Date: string; Amount: number; Type: string; Category: string }> = transactions || [];
 
         const revTxs = txs.filter(t => t.Type === 'Revenue');
         const expTxs = txs.filter(t => t.Type === 'Expense');

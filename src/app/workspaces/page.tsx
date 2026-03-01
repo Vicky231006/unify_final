@@ -112,85 +112,91 @@ export default function WorkspacesPage() {
             }
 
             // ── STEP 1: Client-side parse (instant, no API) ──────────────
+            setProcessMsg(`Parsing ${csvFiles.length} files locally...`);
             const csvContents = await Promise.all(csvFiles.map(f => f.text()));
             const clientParsed = parseCSVsClientSide(csvContents);
-            const clientHasData = clientParsed.employees.length > 0 || clientParsed.projects.length > 0 || clientParsed.tasks.length > 0;
+            const hasData = clientParsed.employees.length > 0 ||
+                clientParsed.projects.length > 0 ||
+                clientParsed.tasks.length > 0 ||
+                clientParsed.transactions.length > 0;
 
-            setProcessMsg(`Client parsed: ${clientParsed.employees.length} employees, ${clientParsed.projects.length} projects, ${clientParsed.tasks.length} tasks. Enhancing with AI...`);
+            let finalResult = clientParsed;
 
-            // ── STEP 2: Gemini enhancement via SSE ────────────────────────
-            let geminiSucceeded = false;
-            try {
-                const res = await fetch('/api/normalize-csv', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ csvContents }),
-                    signal: AbortSignal.timeout(90_000), // 90s max (covers 4 retries)
-                });
+            // ── STEP 2: Fallback to AI if client finds nothing ─────────
+            if (!hasData) {
+                setProcessMsg("Local parser found no rows. Trying AI fallback...");
+                let geminiSucceeded = false;
+                try {
+                    const res = await fetch('http://127.0.0.1:8000/normalize-csv', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ csvContents }),
+                        signal: AbortSignal.timeout(90_000), // 90s max (covers 4 retries)
+                    });
 
-                if (res.body) {
-                    const reader = res.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
+                    if (res.body) {
+                        const reader = res.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
 
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        buffer += decoder.decode(value, { stream: true });
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buffer += decoder.decode(value, { stream: true });
 
-                        // Parse SSE events from buffer
-                        const events = buffer.split('\n\n');
-                        buffer = events.pop() || '';
+                            const events = buffer.split('\n\n');
+                            buffer = events.pop() || '';
 
-                        for (const event of events) {
-                            // Each SSE event can have multiple lines; only 'data:' lines carry JSON
-                            for (const line of event.split('\n')) {
-                                if (!line.startsWith('data: ')) continue;
-                                const jsonStr = line.slice(6).trim(); // strip 'data: '
-                                if (!jsonStr) continue;
-                                try {
-                                    const msg = JSON.parse(jsonStr);
+                            for (const event of events) {
+                                for (const line of event.split('\n')) {
+                                    if (!line.startsWith('data: ')) continue;
+                                    const jsonStr = line.slice(6).trim();
+                                    if (!jsonStr) continue;
+                                    try {
+                                        const msg = JSON.parse(jsonStr);
 
-                                    if (msg.status === 'processing') {
-                                        setProcessMsg('AI normalizing data...');
-                                    } else if (msg.status === 'retrying') {
-                                        const secs = Math.round((msg.waitMs || 5000) / 1000);
-                                        setProcessMsg(`Rate limited — retrying in ${secs}s (attempt ${(msg.attempt ?? 0) + 1}/4)...`);
-                                    } else if (msg.status === 'done' && msg.result) {
-                                        normalized = msg.result;
-                                        const r = msg.result;
-                                        setProcessMsg(`AI extracted: ${r.employees.length} employees, ${r.projects.length} projects, ${r.tasks.length} tasks, ${r.transactions.length} transactions.`);
-                                        setProcessResult('success');
-                                        geminiSucceeded = true;
-                                    } else if (msg.status === 'error') {
-                                        console.warn('[normalize-csv] Gemini error:', msg.error);
-                                    }
-                                } catch (parseErr) {
-                                    // skip malformed JSON lines silently
+                                        if (msg.status === 'processing') {
+                                            setProcessMsg('AI normalizing data...');
+                                        } else if (msg.status === 'retrying') {
+                                            const secs = Math.round((msg.waitMs || 5000) / 1000);
+                                            setProcessMsg(`Rate limited — retrying in ${secs}s (attempt ${(msg.attempt ?? 0) + 1}/4)...`);
+                                        } else if (msg.status === 'done' && msg.result) {
+                                            finalResult = msg.result;
+                                            geminiSucceeded = true;
+                                        } else if (msg.status === 'error') {
+                                            console.warn('[normalize-csv] Gemini error:', msg.error);
+                                        }
+                                    } catch (parseErr) { }
                                 }
                             }
+                            if (geminiSucceeded) break;
                         }
-
-                        if (geminiSucceeded) break;
                     }
+                } catch (fetchErr: any) {
+                    console.warn('[normalize-csv] Gemini fetch failed:', fetchErr.message);
                 }
-            } catch (fetchErr: any) {
-                console.warn('[normalize-csv] Gemini fetch failed:', fetchErr.message);
-            }
 
-            // ── STEP 3: Fallback to client-side if Gemini failed ─────────
-            if (!geminiSucceeded) {
-                normalized = clientHasData ? clientParsed : DUMMY;
-                if (clientHasData) {
-                    setProcessMsg(`AI unavailable — using client-parsed data: ${clientParsed.employees.length} employees, ${clientParsed.projects.length} projects, ${clientParsed.tasks.length} tasks.`);
+                if (!geminiSucceeded) {
+                    finalResult = DUMMY;
+                    setProcessMsg('Could not parse CSV manually or with AI — loaded demo data instead.');
                     setProcessResult('dummy');
                 } else {
-                    setProcessMsg('Could not parse CSV — loaded demo data instead.');
-                    setProcessResult('dummy');
+                    setProcessMsg(`AI extracted: ${finalResult.employees.length} employees, ${finalResult.projects.length} projects.`);
+                    setProcessResult('success');
                 }
+            } else {
+                setProcessMsg(`Local parse complete: ${finalResult.employees.length} employees, ${finalResult.projects.length} projects.`);
+                setProcessResult('success');
             }
 
-            finalize(normalized!);
+            // Ensure amount is string 
+            const safeTxs = (finalResult.transactions || []).map((t: any) => ({
+                ...t,
+                Amount: Number(t.Amount) || 0
+            }));
+            finalResult.transactions = safeTxs as any;
+
+            finalize(finalResult);
 
         } catch (err: any) {
             setProcessMsg(err.message || 'An error occurred');
