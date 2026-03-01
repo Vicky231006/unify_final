@@ -5,6 +5,7 @@ import { Eye, EyeOff, ArrowRight, Lock, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { useAppStore } from "@/store";
 import { CanvasEffect } from "@/components/landing/CanvasEffect";
 import { supabase } from "@/lib/supabase";
 
@@ -80,9 +81,14 @@ export default function LoginPage() {
             const role = (dbUser?.role as "CEO" | "Manager" | "Employee") || "Employee";
             setUserRole(role);
 
-            // Redirect: non-Employee roles go to workspace picker
+            // Fetch existing workspaces from store (via a selector or direct access)
+            const workspaces = useAppStore.getState().workspaces;
+
+            // Redirect: non-Employee roles go to workspace picker or onboarding
             if (role === "Employee") {
                 router.push(nextPath === "/login" ? "/dashboard" : nextPath);
+            } else if (workspaces.length === 0) {
+                router.push("/onboarding");
             } else {
                 router.push("/workspaces");
             }

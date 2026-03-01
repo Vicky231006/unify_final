@@ -269,7 +269,7 @@ export default function WorkspacesPage() {
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: 0.4 }}
-                        onClick={() => setIsCreating(true)}
+                        onClick={() => router.push("/onboarding")}
                         className="h-full border-2 border-dashed border-[var(--color-border)] hover:border-[var(--color-primary)] rounded-2xl flex flex-col items-center justify-center gap-4 text-gray-400 hover:text-white hover:bg-[var(--color-primary)]/5 transition-all p-8 cursor-pointer min-h-[220px]"
                     >
                         <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-2">

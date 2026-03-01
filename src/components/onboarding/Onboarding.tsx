@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { BrainCircuit, Network, BarChart3, ChevronRight, ArrowRight, UploadCloud, Plus, X, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { useAppStore } from "@/store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Department {
@@ -57,9 +58,13 @@ export function Onboarding() {
     const [errors3, setErrors3] = useState("");
 
     // Step 4
-    const [csvFile, setCsvFile] = useState<File | null>(null);
+    const [csvFiles, setCsvFiles] = useState<File[]>([]);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [processMsg, setProcessMsg] = useState("");
+    const [processResult, setProcessResult] = useState<"success" | "error" | "dummy" | null>(null);
 
-    const { setWorkspaceData, setUserRole } = useWorkspace();
+    const { setWorkspaceData: setWorkspaceProviderData, setUserRole: setWsProviderUserRole } = useWorkspace();
+    const { addWorkspace, bulkIngestWorkspaceData, setActiveWorkspaceId } = useAppStore();
     const router = useRouter();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,35 +141,109 @@ export function Onboarding() {
 
     // ── CSV / Submit ───────────────────────────────────────────────────────────
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) setCsvFile(file);
+        const files = e.target.files;
+        if (files) {
+            const valid = Array.from(files).filter(f => f.name.endsWith('.csv') || f.type === 'text/csv');
+            setCsvFiles(prev => [...prev, ...valid]);
+        }
     };
 
-    const parseCSVAndSubmit = () => {
-        // Persist role from onboarding selection
-        setUserRole(onboardingRole);
-        if (!csvFile) {
-            setWorkspaceData(wsName, managerId, []);
+    const parseCSVAndSubmit = async () => {
+        setIsProcessing(true);
+        setProcessResult(null);
+        setProcessMsg('Initializing workspace...');
+
+        // 1. Create Workspace in Store
+        const colors = ["from-blue-500 to-indigo-500", "from-red-500 to-orange-500", "from-emerald-500 to-teal-500"];
+        const allGoals = [
+            ...selectedGoals,
+            ...customGoals.filter((g) => g.checked && g.value.trim()).map((g) => g.value.trim()),
+        ];
+
+        addWorkspace({
+            name: wsName,
+            role: onboardingRole,
+            industry,
+            orgSize,
+            goals: allGoals,
+            color: colors[Math.floor(Math.random() * colors.length)],
+        });
+
+        // Get the ID of the workspace we just created
+        const latestWs = useAppStore.getState().workspaces.at(-1);
+        if (!latestWs) {
+            setProcessMsg("Failed to create workspace record.");
+            setProcessResult("error");
+            setIsProcessing(false);
             return;
         }
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const text = e.target?.result as string;
-            const lines = text.split("\n");
-            const transactions: { Date: string; Amount: number; Type: "Revenue" | "Expense"; Category: string }[] = [];
-            for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-                const [date, amountStr, type, category] = lines[i].split(",").map((s) => s.trim());
-                transactions.push({
-                    Date: date,
-                    Amount: parseFloat(amountStr) || 0,
-                    Type: type as "Revenue" | "Expense",
-                    Category: category,
-                });
+        const wsId = latestWs.id;
+
+        // 2. Process CSVs
+        if (csvFiles.length === 0) {
+            setProcessMsg("No data files uploaded. Creating empty workspace...");
+            setWorkspaceProviderData(wsName, managerId, []);
+            setWsProviderUserRole(onboardingRole);
+            setActiveWorkspaceId(wsId);
+            setProcessResult("success");
+            setIsProcessing(false);
+            return;
+        }
+
+        try {
+            setProcessMsg(`Normalizing ${csvFiles.length} files with AI...`);
+            const csvContents = await Promise.all(csvFiles.map(f => f.text()));
+
+            const res = await fetch('/api/normalize-csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csvContents }),
+            });
+
+            if (!res.body) throw new Error("Connection failed");
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let geminiResult: any = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.status === 'retrying') {
+                            setProcessMsg(`Rate limited, retrying in ${data.waitMs / 1000}s...`);
+                        } else if (data.status === 'done') {
+                            geminiResult = data.result;
+                        } else if (data.status === 'error') {
+                            throw new Error(data.error);
+                        }
+                    }
+                }
             }
-            setWorkspaceData(wsName, managerId, transactions);
-        };
-        reader.readAsText(csvFile);
+
+            if (geminiResult) {
+                bulkIngestWorkspaceData(wsId, geminiResult);
+                setWorkspaceProviderData(wsName, managerId, geminiResult.transactions || []);
+                setWsProviderUserRole(onboardingRole);
+                setActiveWorkspaceId(wsId);
+                setProcessMsg("AI normalization complete. Workspace ready.");
+                setProcessResult("success");
+            } else {
+                throw new Error("AI failed to return data");
+            }
+
+        } catch (err: any) {
+            setProcessMsg(`AI Error: ${err.message}. Workspace created with manual details only.`);
+            setProcessResult("error");
+            setActiveWorkspaceId(wsId);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     // ── Input class helper ────────────────────────────────────────────────────
@@ -371,58 +450,67 @@ export function Onboarding() {
                     <motion.div key="step4" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="flex flex-col gap-6">
                         <div>
                             <h2 className="text-2xl font-bold mb-1">Ingest Data</h2>
-                            <p className="text-gray-400 text-sm">Upload financial records for real-time analytics. <span className="text-gray-500">(Optional)</span></p>
+                            <p className="text-gray-400 text-sm">Upload CSV files for AI-powered workspace normalization. <span className="text-gray-500">(Optional)</span></p>
                         </div>
 
                         <div
                             onClick={() => fileInputRef.current?.click()}
-                            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${csvFile ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5" : "border-[var(--color-border)] hover:border-[var(--color-primary)] hover:bg-white/5"}`}
+                            className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${csvFiles.length > 0 ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5" : "border-[var(--color-border)] hover:border-[var(--color-primary)] hover:bg-white/5"}`}
                         >
-                            <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
-                                <UploadCloud className={`w-6 h-6 ${csvFile ? "text-[var(--color-primary)]" : "text-gray-400"}`} />
+                            <input type="file" accept=".csv" multiple className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                            <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center">
+                                <UploadCloud className={`w-5 h-5 ${csvFiles.length > 0 ? "text-[var(--color-primary)]" : "text-gray-400"}`} />
                             </div>
                             <div className="text-center">
-                                {csvFile ? (
-                                    <>
-                                        <p className="font-semibold text-[var(--color-primary)]">{csvFile.name}</p>
-                                        <p className="text-xs text-gray-400 mt-1">{(csvFile.size / 1024).toFixed(2)} KB</p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="font-semibold text-gray-300">Click to upload CSV</p>
-                                        <p className="text-xs text-gray-500 mt-1">Format: Date, Amount, Type, Category</p>
-                                    </>
-                                )}
+                                <p className="font-semibold text-gray-300 text-sm">Click to upload CSVs</p>
+                                <p className="text-[10px] text-gray-600 mt-1">Employees, Projects, Financials, etc.</p>
                             </div>
                         </div>
 
+                        {/* File list */}
+                        {csvFiles.length > 0 && (
+                            <div className="space-y-2 max-h-[20vh] overflow-y-auto pr-1 custom-scrollbar">
+                                {csvFiles.map((f, i) => (
+                                    <div key={i} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs">
+                                        <BrainCircuit className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                        <span className="flex-1 truncate text-gray-200">{f.name}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); setCsvFiles(prev => prev.filter((_, idx) => idx !== i)); }} className="text-gray-500 hover:text-red-400">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {processMsg && (
+                            <div className={`p-3 rounded-lg border text-xs flex items-start gap-2 ${processResult === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
+                                {isProcessing ? <BrainCircuit className="w-3.5 h-3.5 animate-pulse shrink-0 mt-0.5" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+                                {processMsg}
+                            </div>
+                        )}
+
                         <button
-                            onClick={() => {
-                                parseCSVAndSubmit();
-                                handleNext();
+                            onClick={async () => {
+                                await parseCSVAndSubmit();
+                                if (!isProcessing) handleNext();
                             }}
-                            className="mt-4 w-full bg-[var(--color-primary)] text-white p-3 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-opacity-90 transition-opacity cursor-pointer"
+                            disabled={isProcessing}
+                            className="mt-2 w-full bg-[var(--color-primary)] text-white p-3 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-opacity-90 transition-opacity disabled:opacity-50"
                         >
-                            Compile Workspace <ArrowRight className="w-4 h-4" />
+                            {isProcessing ? "Normalizing..." : "Compile Workspace"} <ArrowRight className="w-4 h-4" />
                         </button>
                     </motion.div>
                 );
 
             case 5:
                 return <LoadingState onComplete={() => {
-                    // Employee lands directly on dashboard; CEO/Manager see workspace selector
-                    if (onboardingRole === 'Employee') {
-                        router.push('/dashboard');
-                    } else {
-                        router.push('/workspaces');
-                    }
+                    router.push('/dashboard');
                 }} />;
         }
     };
 
     return (
-        <div className="h-full w-full flex items-center justify-center px-4 relative z-10">
+        <div className="min-h-screen w-full flex items-center justify-center px-4 relative z-10 py-12">
             <div className="w-full max-w-md bg-[var(--color-card)]/80 backdrop-blur-xl border border-[var(--color-border)] p-8 rounded-2xl shadow-2xl relative overflow-hidden">
                 {step < 5 && (
                     <div className="absolute top-0 left-0 h-1 bg-[var(--color-border)] w-full">

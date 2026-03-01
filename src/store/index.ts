@@ -6,6 +6,9 @@ export type Workspace = {
     id: string;
     name: string;
     role: string;
+    industry?: string;
+    orgSize?: string;
+    goals?: string[];
     color: string;
     lastActive: string;
 };
@@ -141,7 +144,12 @@ export const useAppStore = create<AppState>()(
             setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
 
             addWorkspace: (ws) => set((state) => ({
-                workspaces: [...state.workspaces, { ...ws, id: uuidv4(), lastActive: new Date().toISOString() }]
+                workspaces: [...state.workspaces, {
+                    ...ws,
+                    id: uuidv4(),
+                    lastActive: new Date().toISOString(),
+                    goals: ws.goals || []
+                }]
             })),
             updateWorkspace: (id, data) => set((state) => ({
                 workspaces: state.workspaces.map(w => w.id === id ? { ...w, ...data } : w)
