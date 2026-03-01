@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from jose import jwt, JWTError
+from forecasting import train_and_forecast
 
 # Load .env from project root
 current_dir = Path(__file__).parent.resolve()
@@ -317,6 +318,24 @@ async def get_dashboard_data():
     if not global_dashboard_data:
         return {"data": None, "version": global_dashboard_version}
     return {"data": global_dashboard_data, "version": global_dashboard_version}
+
+@app.post("/forecast")
+async def get_forecast(request: Request):
+    """
+    Receives transactions JSON and returns historical + forecasted data.
+    """
+    try:
+        body = await request.json()
+        transactions = body.get("transactions", [])
+        forecast_days = body.get("days", 30)
+        
+        # This will run the PyTorch LSTM training and inference
+        # If transactions are missing or too few, it uses synthetic data
+        results = train_and_forecast(transactions, forecast_days)
+        return results
+    except Exception as e:
+        print(f"FORECAST ERROR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

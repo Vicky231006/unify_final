@@ -89,6 +89,7 @@ export type OrgMetrics = {
     }>;
     weeklyVelocity: Array<{ week: string; velocity: number; target: number }>;
     transactionTrend: Array<{ date: string; revenue: number; expense: number }>;
+    transactions: any[];
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -262,6 +263,7 @@ export function useWorkspaceMetrics(workspaceId: string | null): OrgMetrics {
             deptStats,
             weeklyVelocity,
             transactionTrend,
+            transactions: txs,
         };
     }, [workspaceId, employees, tasks, projects, departments]);
 }
@@ -276,5 +278,6 @@ function emptyMetrics(): OrgMetrics {
         totalProjects: 0, behindProjects: 0,
         orgHealthPct: 0, riskScore: 0, riskLabel: 'Low', productivityGrowth: 0,
         deptStats: [], weeklyVelocity: [], transactionTrend: [],
+        transactions: [],
     };
 }

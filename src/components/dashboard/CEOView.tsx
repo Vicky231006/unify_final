@@ -8,6 +8,7 @@ import { Activity, TrendingUp, AlertTriangle, TrendingDown, BarChart3, Users } f
 import { motion } from "framer-motion";
 import { useAppStore } from "@/store";
 import { useWorkspaceMetrics } from "@/lib/metrics";
+import FutureAnalysis from "./FutureAnalysis";
 
 // Custom tooltip style shared across charts
 const tooltipStyle = {
@@ -189,6 +190,9 @@ export function CEOView() {
                         )}
                     </div>
                 </div>
+
+                {/* Future Analysis Section — PyTorch LSTM */}
+                <FutureAnalysis transactions={m.transactions} />
             </div>
 
             {/* ── RIGHT: Audit ledger (real activity logs) ── */}
